@@ -28,11 +28,12 @@ function parseFile(buf) {
 	};
 
 	disassembler.onHeader = function(header) {
-		jQuery('#fileInfos').text(JSON.stringify(header));
+		header.OptHeader.entryPoint = '0x' + header.OptHeader.entryPoint.toString(16);
+		jQuery('#fileInfos').html(ich.fileInfoTemplate(header));
 	};
 
 	disassembler.onSectionTable = function(table) {
-		jQuery('#sectionTable').text(JSON.stringify(table));
+		jQuery('#sectionTable').html(ich.sectionTableTemplate(table));
 	};
 	
 	disassembler.start();
