@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>disassemblr.js</title>
+		
+		<link rel="stylesheet" href="http://code.jquery.com/ui/1.8.23/themes/base/jquery-ui.css">
+		<style>
+		body {
+			margin: 0;
+			padding: 0;
+		}
+		
+		#sidePane {
+			float: left;
+			width: 200px;
+		}
+		
+		#contentPane {
+			float: right;
+			width: -webkit-calc(100% - 200px);
+			width: calc(100% - 200px);
+		}
+		</style>
+
+		
+		<script src="//ajax.googleapis.com/ajax/libs/jquery/1.8/jquery.min.js"></script>
+		<script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.8/jquery-ui.min.js"></script>
+		<script src="disassemblr.js"></script>
+		<script src="script.js"></script>
+	</head>
+	
+	<body>
+		<input type="file" id="disassembleFile"><br>
+		<div id="sidePane">
+			Function names:
+		</div>
+		<div id="contentPane">
+			<ul>
+				<li><a href="#fileInfos">File Info</a></li>
+				<li><a href="#sectionTable">Section Table</a></li>
+				<li><a href="#assembly">Assembly</a></li>
+			</ul>
+			
+			<div id="fileInfos">Info</div>
+			<div id="sectionTable">Info</div>
+			<div id="assembly">Stuff</div>
+		</div>
+	</body>
+</html>
