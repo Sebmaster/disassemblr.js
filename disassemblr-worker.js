@@ -140,22 +140,25 @@ var HeaderStructure = {
 };
 
 var buffer;
+var peHeader;
+var sectionTable;
 
 /**
  * Controls the full parsing process. 
  */
 function parseBuffer() {
-	var parser = new jParser(buffer.buffer, HeaderStructure);
+	var dataView = new jDataView(buffer.buffer, 0, undefined, true);
+	var parser = new jParser(dataView, HeaderStructure);
 	
 	try {
 		var peHeaderOffset = parser.parse('DOSHeader').peAddress;
 		
 		parser.seek(peHeaderOffset);
 		
-		var peHeader = parser.parse('PEHeader');
+		peHeader = parser.parse('PEHeader');
 		self.postMessage({command: 'peHeader', header: peHeader});
 		
-		var sectionTable = parser.parse(['array', 'SectionEntry', peHeader.FileHeader.sectionCount]);
+		sectionTable = parser.parse(['array', 'SectionEntry', peHeader.FileHeader.sectionCount]);
 		self.postMessage({command: 'sectionTable', table: sectionTable});
 	} catch (e) {
 		e = e.message || e;
@@ -172,6 +175,25 @@ self.onmessage = function(e) {
 	switch (e.data.command) {
 		case 'buffer':
 			buffer = e.data.buffer;
+			break;
+		case 'assembly':
+			var textSection = sectionTable[0];
+			var offset = textSection.rawDataOffset;
+			var to = offset + textSection.rawDataSize;
+			var asmStr = '';
+			
+			for (var i = offset; i < to;) {
+				var data = self.disasmx86.disassemble_and_format_x86_instruction(buffer, i);
+				
+				asmStr += data[1] + '\r\n';
+				i += data[2];
+				
+				if (asmStr.length > 1000000) {
+					self.postMessage({command: 'assembly', assembly: asmStr});
+					asmStr = '';
+				}
+			}
+			self.postMessage({command: 'assembly', assembly: asmStr});
 			break;
 		case 'start':
 			parseBuffer();

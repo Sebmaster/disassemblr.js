@@ -21,6 +21,13 @@ Disassemblr.prototype.start = function() {
 };
 
 /**
+ * Parse the .text section of the assembly.
+ */
+Disassemblr.prototype.parseAssembly = function() {
+	this.worker.postMessage({command: 'assembly'});
+};
+
+/**
  * Called, if we get a message from the worker.
  */
 Disassemblr.prototype.workerMessage = function(e) {
@@ -32,6 +39,9 @@ Disassemblr.prototype.workerMessage = function(e) {
 			break;
 		case 'sectionTable':
 			this.onSectionTable(e.data.table);
+			break;
+		case 'assembly':
+			this.onAssembly(e.data.assembly);
 			break;
 		case 'function':
 			this.onFunction(e.data.function);
@@ -60,11 +70,20 @@ Disassemblr.prototype.onData = function(e) {};
 Disassemblr.prototype.onHeader = function(e) {};
 
 /**
- * The onSectionTable event gets called if we received the section header immediately following the PE header.
+ * The onSectionTable event gets called if we received the section header
+ * immediately following the PE header.
  * 
  * @param {Object} e
  */
 Disassemblr.prototype.onSectionTable = function(e) {};
+
+/**
+ * The onAssembly event gets called as soon as the .text section got read
+ * and converted to a readable format.
+ * 
+ * @param {Object} e
+ */
+Disassemblr.prototype.onAssembly = function(e) {};
 
 /**
  * The onFunction event gets called if a new function got detected in the file. 

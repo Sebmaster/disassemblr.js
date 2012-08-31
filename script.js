@@ -28,13 +28,22 @@ function parseFile(buf) {
 	};
 
 	disassembler.onHeader = function(header) {
-		header.OptHeader.entryPoint = '0x' + header.OptHeader.entryPoint.toString(16);
+		header.OptHeader.entryPoint = '0x' + header.OptHeader.entryPoint.toString(16).toUpperCase();
 		jQuery('#fileInfos').html(ich.fileInfoTemplate(header));
 	};
 
 	disassembler.onSectionTable = function(table) {
-		jQuery('#sectionTable').html(ich.sectionTableTemplate(table));
+		for (var i=0; i < table.length; ++i) {
+			table[i].virtualAddress = '0x' + table[i].virtualAddress.toString(16).toUpperCase();
+			table[i].rawDataOffset = '0x' + table[i].rawDataOffset.toString(16).toUpperCase();
+		}
+		
+		jQuery('#sectionTable').html(ich.sectionTableTemplate({entries: table}));
 	};
+	
+	disassembler.onAssembly = function(data) {
+		jQuery('#assembly').text(data);
+	}
 	
 	disassembler.start();
 }

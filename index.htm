@@ -46,42 +46,60 @@
 					<h2>File-PE-Header</h2>
 					<dl>
 						<dt>Sections</dt>
-						<dd>{{ FileHeader.sectionCount }}</dd>
+						<dd>{{FileHeader.sectionCount}}</dd>
 						<dt>Build-Date</dt>
-						<dd>{{ FileHeader.creationDate }}</dd>
+						<dd>{{FileHeader.creationDate}}</dd>
 						<dt>Symbols</dt>
-						<dd>{{ FileHeader.symbolCount }}</dd>
+						<dd>{{FileHeader.symbolCount}}</dd>
 						<dt>Symbol-Offset</dt>
-						<dd>{{ FileHeader.symbolOffset }}</dd>
+						<dd>{{FileHeader.symbolOffset}}</dd>
 						<dt>Flags</dt>
-						<dd>{{ FileHeader.flags }}</dd>
+						<dd>{{FileHeader.flags}}</dd>
 					</dl>
 					
 					<h2>Opt-PE-Header</h2>
 					<dl>
 						<dt>Image Type</dt>
-						<dd>{{ OptHeader.imageType }}</dd>
+						<dd>{{OptHeader.imageType}}</dd>
 						<dt>Linker Version</dt>
-						<dd>{{ OptHeader.linkerMajor }}.{{ OptHeader.linkerMinor }}</dd>
+						<dd>{{OptHeader.linkerMajor}}.{{ OptHeader.linkerMinor}}</dd>
 						<dt>Entry Point</dt>
-						<dd>{{ OptHeader.entryPoint }}</dd>
+						<dd>{{OptHeader.entryPoint}}</dd>
 						<dt>Min OS Version</dt>
-						<dd>{{ OptHeader.osMajor }}.{{ OptHeader.osMinor }}</dd>
+						<dd>{{OptHeader.osMajor}}.{{ OptHeader.osMinor}}</dd>
 						<dt>Subsystem</dt>
-						<dd>{{ OptHeader.subsystem }}</dd>
+						<dd>{{OptHeader.subsystem}}</dd>
 						<dt>RVAs</dt>
-						<dd>{{ OptHeader.rvaCount }}</dd>
+						<dd>{{OptHeader.rvaCount}}</dd>
 					</dl>
 				</script>
 			</div>
 			
 			<div id="sectionTable">
 				<script id="sectionTableTemplate" type="text/html">
-					
+					<table width="100%">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Startaddress</th>
+								<th>Flags</th>
+							</tr>
+						</thead>
+						
+						<tbody>
+							{{#entries}}
+							<tr>
+								<td>{{name}}</td>
+								<td>{{rawDataOffset}}</td>
+								<td>{{flags}}</td>
+							</tr>
+							{{/entries}}
+						</tbody>
+					</table>
 				</script>
 			</div>
 			
-			<div id="assembly">Stuff</div>
+			<div id="assembly" style="white-space: pre"></div>
 		</div>
 	</body>
 </html>
