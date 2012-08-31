@@ -176,6 +176,25 @@ self.onmessage = function(e) {
 		case 'buffer':
 			buffer = e.data.buffer;
 			break;
+		case 'assembly':
+			var textSection = sectionTable[0];
+			var offset = textSection.rawDataOffset;
+			var to = offset + textSection.rawDataSize;
+			var asmStr = '';
+			
+			for (var i = offset; i < to;) {
+				var data = self.disasmx86.disassemble_and_format_x86_instruction(buffer, i);
+				
+				asmStr += data[1] + '\r\n';
+				i += data[2];
+				
+				if (asmStr.length > 1000000) {
+					self.postMessage({command: 'assembly', assembly: asmStr});
+					asmStr = '';
+				}
+			}
+			self.postMessage({command: 'assembly', assembly: asmStr});
+			break;
 		case 'start':
 			parseBuffer();
 			break;
