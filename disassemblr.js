@@ -2,7 +2,8 @@
 
 /**
  * Disassemblr allows one to disassemble PE files.
- *  
+ * 
+ * @constructor
  * @param {Uint8Array} buf the bytes of the file to parse
  */
 function Disassemblr(buf) {
