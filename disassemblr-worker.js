@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts('uint64.js', 'jDataView.js', 'jParser.js', 'disasmx86.js');
+importScripts('uint64.js', 'jDataView.js', 'jParser.js', 'DisASMx86.js');
 
 var HeaderStructure = {
 	DOSHeader: {
@@ -177,23 +177,20 @@ self.onmessage = function(e) {
 			buffer = e.data.buffer;
 			break;
 		case 'assembly':
+			var disasmx86 = new DisASMx86();
+			
 			var textSection = sectionTable[0];
 			var offset = textSection.rawDataOffset;
 			var to = offset + textSection.rawDataSize;
 			var asmStr = '';
 			
 			for (var i = offset; i < to;) {
-				var data = self.disasmx86.disassemble_and_format_x86_instruction(buffer, i);
+				var data = disasmx86.parseAndFormat(buffer, i);
 				
-				asmStr += data[1] + '\r\n';
-				i += data[2];
+				i += data.length;
 				
-				if (asmStr.length > 1000000) {
-					self.postMessage({command: 'assembly', assembly: asmStr});
-					asmStr = '';
-				}
+				self.postMessage({command: 'assembly', assembly: data.str});
 			}
-			self.postMessage({command: 'assembly', assembly: asmStr});
 			break;
 		case 'start':
 			parseBuffer();

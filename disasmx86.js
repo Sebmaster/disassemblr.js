@@ -1,1894 +1,611 @@
 (function() {
-	function Register(name) {
-	  this.name = name;
+	"use strict";
+	
+	/**
+	 * Extends object from with properties from to, if to is null, a deep clone is performed
+	 * 
+	 * @param {Object} from
+	 * @param {Object} to
+	 * @return {Object} the cloned object
+	 */
+	function extend(from, to) {
+	    if (from == null || typeof from != "object") return from;
+	    if (from.constructor != Object && from.constructor != Array) return from;
+	    if (from.constructor == Date || from.constructor == RegExp || from.constructor == Function ||
+	        from.constructor == String || from.constructor == Number || from.constructor == Boolean)
+	        return new from.constructor(from);
+	
+	    to = to || new from.constructor();
+	
+	    for (var name in from) {
+	        to[name] = typeof to[name] == "undefined" ? extend(from[name], null) : to[name];
+	    }
+	
+	    return to;
 	}
 	
-	Register.prototype = {
-	  toString: function(style) {
-	    style = style ? style : "att";
-	    if (style == "att")
-	      return "%" + this.name;
-	    return this.name;
-	  }
+	/**
+	 * A class which enables one to disassemble a x86 assembly.
+	 * 
+	 * @constructor
+	 * @param {{addrSize: number, notation: string}}
+	 */
+	function DisASMx86(config) {
+		if (!config) {
+			config = {notation: 'INT'};
+		}
+		
+		this.config = config;
+		this.modeConfig = {registerMode: 'r', addrSize: 4};
+	}
+	
+	DisASMx86.Registers = {
+		0: {
+			r8: 'AL',
+			r16: 'AX',
+			r32: 'EAX',
+			mm: 'MM0',
+			xmm: 'XMM0'
+		},
+		1: {
+			r8: 'CL',
+			r16: 'CX',
+			r32: 'ECX',
+			mm: 'MM1',
+			xmm: 'XMM1'
+		},
+		2: {
+			r8: 'DL',
+			r16: 'DX',
+			r32: 'EDX',
+			mm: 'MM2',
+			xmm: 'XMM2'
+		},
+		3: {
+			r8: 'BL',
+			r16: 'BX',
+			r32: 'EBX',
+			mm: 'MM3',
+			xmm: 'XMM3'
+		},
+		4: {
+			r8: 'AH',
+			r16: 'SP',
+			r32: 'ESP',
+			mm: 'MM4',
+			xmm: 'XMM4'
+		},
+		5: {
+			r8: 'CH',
+			r16: 'BP',
+			r32: 'EBP',
+			mm: 'MM5',
+			xmm: 'XMM5'
+		},
+		6: {
+			r8: 'DH',
+			r16: 'SI',
+			r32: 'ESI',
+			mm: 'MM6',
+			xmm: 'XMM6'
+		},
+		7: {
+			r8: 'BH',
+			r16: 'DI',
+			r32: 'EDI',
+			mm: 'MM7',
+			xmm: 'XMM7'
+		}
 	};
 	
-	function Literal(value, size) {
-	  this.value = value;
-	  this.size = size;
-	}
-	
-	Literal.prototype = {
-	  toString: function(style) {
-	    style = style ? style : "att";
-	    // format hex string first
-	    var v = this.value.toString(16);
-	    if (v.length < 2 * this.size) {
-	      // zero-pad to the left
-	      v = Array(2 * this.size - v.length + 1).join("0") + v;
-	    }
-	    // AT&T literals start with $0x
-	    if (style == "att") {
-	      return "$0x" + v;
-	    }
-	    // Intel literals must start with a digit
-	    if (!/[^\d]/.test(v)) {
-	      v = "0" + v;
-	    }
-	    // and end with h
-	    return v + "h";
-	  }
+	DisASMx86.RegisterCombinations = {
+		0: 'BX + SI',
+		1: 'BX + DI',
+		2: 'BP + SI',
+		3: 'BP + DI',
+		4: 'SI',
+		5: 'DI',
+		6: 'BP',
+		7: 'BX'
 	};
 	
-	function Address(parts) {
-	  this.register = parts.register || null;
-	  this.displacement = parts.displacement || null;
+	DisASMx86.x86Opcodes = {
+		prefixes: {
+			0x26: {
+				mnem: 'ES'
+			},
+			0x36: {
+				mnem: 'SS'
+			},
+			0x3E: {
+				mnem: 'DS'
+			},
+			0x64: {
+				mnem: 'FS'
+			},
+			0x65: {
+				mnem: 'GS'
+			},
+			0x66: {
+				config: {
+					addrSize: 2
+				}
+			},
+			0x67: {
+				
+			},
+			0x9B: {
+				
+			},
+			0xF0: {
+				mnem: 'LOCK'
+			}
+		},
+		opcodes: [
+			{
+				seq: [0x00],
+				mnem: 'ADD',
+				modRM: true,
+				operands: ['RM', 'R']
+			},
+			{
+				seq: [0x0B],
+				mnem: 'OR',
+				modRM: true,
+				operands: ['R', 'RM']
+			},
+			{
+				seq: [0x50],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[0]]
+			},
+			{
+				seq: [0x51],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[1]]
+			},
+			{
+				seq: [0x52],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[2]]
+			},
+			{
+				seq: [0x53],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[3]]
+			},
+			{
+				seq: [0x54],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[4]]
+			},
+			{
+				seq: [0x55],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[5]]
+			},
+			{
+				seq: [0x56],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[6]]
+			},
+			{
+				seq: [0x57],
+				mnem: 'PUSH',
+				operands: [DisASMx86.Registers[7]]
+			},
+			{
+				seq: [0x58],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[0]]
+			},
+			{
+				seq: [0x59],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[1]]
+			},
+			{
+				seq: [0x5A],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[2]]
+			},
+			{
+				seq: [0x5B],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[3]]
+			},
+			{
+				seq: [0x5C],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[4]]
+			},
+			{
+				seq: [0x5D],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[5]]
+			},
+			{
+				seq: [0x5E],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[6]]
+			},
+			{
+				seq: [0x5F],
+				mnem: 'POP',
+				operands: [DisASMx86.Registers[7]]
+			},
+			{
+				seq: [0x8B],
+				mnem: 'MOV',
+				modRM: true,
+				operands: ['R', 'RM']
+			},
+			{
+				seq: [0xC3],
+				mnem: 'RETN'
+			},
+			{
+				seq: [0xDF, 0xE0],
+				op_ext: {
+					4: {
+						mnem: 'FNSTSW',
+						operands: [DisASMx86.Registers[0]],
+						prefixes: {
+							0x9B: {
+								mnem: 'FSTSW'
+							}
+						}
+					}
+				}
+			},
+			{
+				seq: [0xF7],
+				op_ext: {
+					0: {
+						mnem: 'TEST',
+						operands: ['RM', 'I']
+					},
+					1: {
+						mnem: 'TEST'
+					},
+					2: {
+						mnem: 'NOT'
+					},
+					3: {
+						mnem: 'NEG'
+					},
+					4: {
+						mnem: 'MUL'
+					},
+					5: {
+						mnem: 'IMUL'
+					},
+					6: {
+						mnem: 'DIV'
+					},
+					7: {
+						mnem: 'IDIV'
+					}
+				}
+			}
+		]
 	};
 	
-	Address.prototype = {
-	  toString: function(style)  {
-	    style = style ? style : "att";
-	    if (style == "att") {
-	      var val = "";
-	      if (this.displacement != null) {
-	        val = this.displacement.toString(style);
-	      }
-	      if (this.register != null) {
-	        val += "(" + this.register.toString(style) + ")";
-	      }
-	      return val;
-	    }
-	    return "";
-	  }
+	DisASMx86.prototype.config = null;
+	
+	/**
+	 * Determines the opcode extension of a ModR/M byte.
+	 * 
+	 * @private
+	 * @param {number} b the byte to read from
+	 * @return {number}
+	 */
+	DisASMx86.prototype.getReg = function(b) {
+		return (b >> 3) & 7;
 	};
 	
-	// General-purpose registers, indexed by operand size in bytes.
-	const gpregs = {
-	    1: [new Register("al"), new Register("cl"), new Register("dl"), new Register("bl"),
-	        new Register("ah"), new Register("ch"), new Register("dh"), new Register("bh")],
-	    2: [new Register("ax"), new Register("cx"), new Register("dx"), new Register("bx"),
-	        new Register("sp"), new Register("bp"), new Register("si"), new Register("di")],
-	    4: [new Register("eax"), new Register("ecx"), new Register("edx"), new Register("ebx"),
-	        new Register("esp"), new Register("ebp"), new Register("esi"), new Register("edi")]
+	/**
+	 * Determines the mod bits of the ModR/M byte.
+	 * 
+	 * @private
+	 * @param {number} b the byte to read from
+	 * @return {number}
+	 */
+	DisASMx86.prototype.getMod = function(b) {
+		return b >> 6;
 	};
 	
-	// Segment registers.
-	const segregs = [new Register("es"), new Register("cs"), new Register("ss"),
-	                 new Register("ds"), new Register("fs"),new Register("gs")];
-	
-	const prefix = {
-	    LOCK: 1,
-	    REPE: 2,
-	    REPNE: 3,
-	    SEGMENT_CS: 4,
-	    SEGMENT_SS: 5,
-	    SEGMENT_DS: 6,
-	    SEGMENT_ES: 7,
-	    SEGMENT_FS: 8,
-	    SEGMENT_GS: 9,
-	    OPERAND_SIZE: 10,
-	    ADDR_SIZE: 11
+	/**
+	 * Determines the R/M bits of the ModR/M byte.
+	 * 
+	 * @private
+	 * @param {number} b the byte to read from
+	 * @return {{src: {reg: Object, displ: number, adrOf: boolean, sib: boolean}, dest: Object}}
+	 */
+	DisASMx86.prototype.getRM = function(b) {
+		return b & 7;
 	};
 	
-	const tables = {
-	  MODRM: 0
+	/**
+	 * Disassembles all prefix bytes. 
+	 * 
+	 * @protected
+	 * @param {Array.<number>|Uint8Array} buf the buffer to read from
+	 * @param {number} offset the offset from the start of the buffer
+	 * @return {{prefixes: Array.<number>, length: number}}
+	 */
+	DisASMx86.prototype.parsePrefixes = function(buf, offset) {
+		var prefixes = [];
+		for (var i=0; buf[offset + i] in DisASMx86.x86Opcodes.prefixes; ++i) {
+			prefixes.push(buf[offset + i]);
+		}
+		
+		return prefixes;
 	};
 	
-	const opcodes_x86 = {
-	    0x00: {name:"add",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x01: {name:"add",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x02: {name:"add",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x03: {name:"add",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x04: {name:"add",
-	           src_type:"I",
-	           src_size:"b",
-	           dest_type:"RR",
-	           dest_size:"b",
-	           dest:0},
-	    0x05: {name:"add",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    0x06: {name:"push",
-	           src_type: "RS",
-	           src:0},
-	    0x07: {name:"pop",
-	           src_type: "RS",
-	           src:0},
-	    0x08: {name:"or",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x09: {name:"or",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x0a: {name:"or",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x0b: {name:"or",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x0c: {name:"or",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0x0d: {name:"or",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    0x0e: {name:"push",
-	           src_type: "RS",
-	           src:1},
-	    //0x0F XXX: two-byte opcodes
-	    0x10: {name:"adc",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x11: {name:"adc",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x12: {name:"adc",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x13: {name:"adc",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x14: {name:"adc",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0x15: {name:"adc",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    0x16: {name:"push",
-	           src_type: "RS",
-	           src:2},
-	    0x17: {name:"pop",
-	           src_type: "RS",
-	           src:2},
-	    0x18: {name:"sbb",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x19: {name:"sbb",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x1a: {name:"sbb",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x1b: {name:"sbb",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x1c: {name:"sbb",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0x1d: {name:"sbb",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    0x1E: {name:"push",
-	           src_type: "RS",
-	           src:3},
-	    0x1F: {name:"pop",
-	           src_type: "RS",
-	           src:3},
-	    0x20: {name:"and",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x21: {name:"and",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x22: {name:"and",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x23: {name:"and",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x24: {name:"and",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0x25: {name:"and",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    //0x26 XXX: segment override prefix ES
-	    0x27: {name:"daa"},
-	    0x28: {name:"sub",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x29: {name:"sub",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x2a: {name:"sub",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x2b: {name:"sub",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x2c: {name:"sub",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0x2d: {name:"sub",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    //0x2E XXX: segment override prefix CS
-	    0x2F: {name:"das"},
-	    0x30: {name:"xor",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x31: {name:"xor",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x32: {name:"xor",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x33: {name:"xor",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x34: {name:"xor",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0x35: {name:"xor",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    //0x36 XXX: segment override prefix SS
-	    0x37: {name:"aaa"},
-	    0x38: {name:"cmp",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x39: {name:"cmp",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x3a: {name:"cmp",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x3b: {name:"cmp",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    0x3c: {name:"cmp",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0x3d: {name:"cmp",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    //0x3E XXX: segment override prefix DS
-	    0x3f: {name:"aas"},
-	    0x40: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0},
-	    0x41: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:1},
-	    0x42: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:2},
-	    0x43: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:3},
-	    0x44: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:4},
-	    0x45: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:5},
-	    0x46: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:6},
-	    0x47: {name:"inc",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:7},
-	    0x48: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0},
-	    0x49: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:1},
-	    0x4a: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:2},
-	    0x4b: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:3},
-	    0x4c: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:4},
-	    0x4d: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:5},
-	    0x4e: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:6},
-	    0x4f: {name:"dec",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:7},
-	    0x50: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0},
-	    0x51: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:1},
-	    0x52: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:2},
-	    0x53: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:3},
-	    0x54: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:4},
-	    0x55: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:5},
-	    0x56: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:6},
-	    0x57: {name:"push",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:7},
-	    0x58: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0},
-	    0x59: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:1},
-	    0x5a: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:2},
-	    0x5b: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:3},
-	    0x5c: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:4},
-	    0x5d: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:5},
-	    0x5e: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:6},
-	    0x5f: {name:"pop",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:7},
-	    0x60: {name:"pusha"},
-	    0x61: {name:"popa"},
-	    //0x62 BOUND Gv,Ma
-	    //0x63 ARPL Ew,Gw
-	    //0x64 XXX: segment override prefix FS
-	    //0x65 XXX: segment override prefix GS
-	    0x66: {prefix_type:prefix.OPERAND_SIZE},
-	    0x67: {prefix_type:prefix.ADDR_SIZE},
-	    0x68: {name:"push",
-	           src_type:"I",
-	           src_size:"z"},
-	    //0x69 IMUL Gv,Ev,Iz
-	    0x6a: {name:"push",
-	           src_type:"I",
-	           src_size:"b"},
-	    //0x6B IMUL Gv,Ev,Ib
-	    //0x6C INS Yb,DX
-	    //0x6D INS Yz,DX
-	    //0x6E OUTS DX,Xb
-	    //0x6F OUTS DX,Xz
-	    0x70: {name:"jo",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x71: {name:"jno",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x72: {name:"jb",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x73: {name:"jnb",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x74: {name:"jz",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x75: {name:"jnz",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x76: {name:"jbe",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x77: {name:"jnbe",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x78: {name:"js",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x79: {name:"jns",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x7a: {name:"jp",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x7b: {name:"jnp",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x7c: {name:"jl",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x7d: {name:"jnl",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x7e: {name:"jle",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x7f: {name:"jnle",
-	           src_type: "J",
-	           src_size: "b"},
-	    0x80: { // group 1 Eb,Ib
-	      table_type:tables.MODRM,
-	      0x0: {name:"add",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x1: {name:"or",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x2: {name:"adc",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x3: {name:"sbb",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x4: {name:"and",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x5: {name:"sub",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x6: {name:"xor",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x7: {name:"cmp",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"}
-	    },
-	    0x81: { // group 1 Ev,Iz
-	      table_type:tables.MODRM,
-	      0x0: {name:"add",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x1: {name:"or",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x2: {name:"adc",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x3: {name:"sbb",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x4: {name:"and",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x5: {name:"sub",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x6: {name:"xor",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x7: {name:"cmp",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"}
-	    },
-	    0x82: { // group 1 Eb,Ib
-	      table_type:tables.MODRM,
-	      0x0: {name:"add",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x1: {name:"or",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x2: {name:"adc",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x3: {name:"sbb",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x4: {name:"and",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x5: {name:"sub",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x6: {name:"xor",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x7: {name:"cmp",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"}
-	    },
-	    0x83: { // group 1 Ev,Ib
-	      table_type:tables.MODRM,
-	      0x0: {name:"add",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x1: {name:"or",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x2: {name:"adc",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x3: {name:"sbb",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x4: {name:"and",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x5: {name:"sub",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x6: {name:"xor",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x7: {name:"cmp",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"}
-	    },
-	    0x84: {name:"test",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x85: {name:"test",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x86: {name:"xchg",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x87: {name:"xchg",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x88: {name:"mov",
-	           src_type: "G",
-	           src_size: "b",
-	           dest_type: "E",
-	           dest_size: "b"},
-	    0x89: {name:"mov",
-	           src_type: "G",
-	           src_size: "v",
-	           dest_type: "E",
-	           dest_size: "v"},
-	    0x8a: {name:"mov",
-	           src_type: "E",
-	           src_size: "b",
-	           dest_type: "G",
-	           dest_size: "b"},
-	    0x8b: {name:"mov",
-	           src_type: "E",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    //0x8C MOV Mw,Sw / MOV Rv,Sw
-	    0x8d: {name:"lea",
-	           src_type: "M",
-	           src_size: "v",
-	           dest_type: "G",
-	           dest_size: "v"},
-	    //0x8E MOV Sw,Mw / MOV Sw,Rv
-	    0x8f: {name:"pop",
-	           src_type: "E",
-	           src_size: "v"},
-	    0x90: {name:"nop"},
-	    0x91: {name:"xchg",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0,
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:1},
-	    0x92: {name:"xchg",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0,
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:2},
-	    0x93: {name:"xchg",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0,
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:3},
-	    0x94: {name:"xchg",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0,
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:4},
-	    0x95: {name:"xchg",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0,
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:5},
-	    0x96: {name:"xchg",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0,
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:6},
-	    0x97: {name:"xchg",
-	           src_type: "RR",
-	           src_size: "v",
-	           src:0,
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:7},
-	    //0x98 CBW/CWDE
-	    //0x99 CWD/CDQ
-	    //0x9A CALL Ap
-	    0x9b: {name:"fwait"},
-	    0x9c: {name:"pushf"},
-	    0x9d: {name:"popf"},
-	    0x9e: {name:"sahf"},
-	    0x9f: {name:"lahf"},
-	    0xa0: {name:"mov",
-	           src_type: "O",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest: 0},
-	    0xa1: {name:"mov",
-	           src_type: "O",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest: 0},
-	    0xa2: {name:"mov",
-	           src_type: "RR",
-	           src_size: "b",
-	           src: 0,
-	           dest_type: "O",
-	           dest_size: "b"},
-	    0xa3: {name:"mov",
-	           src_type: "RR",
-	           src_size: "v",
-	           src: 0,
-	           dest_type: "O",
-	           dest_size: "v"},
-	    //0xA4 MOVS Yb,Xb
-	    //0xA5 MOVS Yv,Xv
-	    //0xA6 CMPS Yb,Xb
-	    //0xA7 CMPS Yv,Xv
-	    0xa8: {name:"test",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0xa9: {name:"test",
-	           src_type:"I",
-	           src_size:"z",
-	           dest_type:"RR",
-	           dest_size:"z",
-	           dest:0},
-	    //0xAA STOS Yb,AL
-	    //0xAB STOS Yv,rAX
-	    //0xAC LODS AL,Xb
-	    //0xAD LODS rAX,Xv
-	    //0xAE SCAS Yb,AL
-	    //0xAF SCAS Yv,rAX
-	    0xb0: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0xb1: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:1},
-	    0xb2: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:2},
-	    0xb3: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:3},
-	    0xb4: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:4},
-	    0xb5: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:5},
-	    0xb6: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:6},
-	    0xb7: {name:"mov",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:7},
-	    0xb8: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:0},
-	    0xb9: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:1},
-	    0xba: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:2},
-	    0xbb: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:3},
-	    0xbc: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:4},
-	    0xbd: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:5},
-	    0xbe: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:6},
-	    0xbf: {name:"mov",
-	           src_type: "I",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:7},
-	    0xc0: { // group 2 Eb,Ib
-	      table_type:tables.MODRM,
-	      0x0: {name:"rol",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x1: {name:"ror",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x2: {name:"rcl",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x3: {name:"rcr",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x4: {name:"shl",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x5: {name:"shr",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x6: {name:"sal",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x7: {name:"sar",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"}
-	    },
-	    0xc1: { // group 2 Ev,Ib
-	      table_type:tables.MODRM,
-	      0x0: {name:"rol",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x1: {name:"ror",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x2: {name:"rcl",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x3: {name:"rcr",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x4: {name:"shl",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x5: {name:"shr",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x6: {name:"sal",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x7: {name:"sar",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "v"}
-	    },
-	    0xc2: {name:"ret",
-	           src_type:"I",
-	           src_size:"w"},
-	    0xc3: {name:"ret"},
-	    //0xC4 LES Gz,Mp
-	    //0xC5 LDS Gz,Mp
-	    0xc6: { // group 12 Eb,Ib
-	      table_type:tables.MODRM,
-	      0x0: {name:"mov",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"}
-	    },
-	    0xc7: { // group 12 Ev,Iz
-	      table_type:tables.MODRM,
-	      0x0: {name:"mov",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"}
-	    },
-	    //0xC8 ENTER Iw,Ib
-	    0xc9: {name:"leave"},
-	    0xca: {name:"lret",
-	           src_type:"I",
-	           src_size:"w"},
-	    0xcb: {name:"lret"},
-	    0xcc: {name:"int3"},
-	    0xcd: {name:"int",
-	           src_type:"I",
-	           src_size:"b"},
-	    0xce: {name:"into"},
-	    0xcf: {name:"iret"},
-	    0xd0: { // group 2 Eb,1
-	      table_type:tables.MODRM,
-	      0x0: {name:"rol",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x1: {name:"ror",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x2: {name:"rcl",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x3: {name:"rcr",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x4: {name:"shl",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x5: {name:"shr",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x6: {name:"sal",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x7: {name:"sar",
-	            src_type: "E",
-	            src_size: "b"}
-	    },
-	    0xd1: { // group 2 Ev,1
-	      table_type:tables.MODRM,
-	      0x0: {name:"rol",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x1: {name:"ror",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x2: {name:"rcl",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x3: {name:"rcr",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x4: {name:"shl",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x5: {name:"shr",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x6: {name:"sal",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x7: {name:"sar",
-	            src_type: "E",
-	            src_size: "v"}
-	    },
-	    0xd2: { // group 2 Eb,CL
-	      table_type:tables.MODRM,
-	      0x0: {name:"rol",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x1: {name:"ror",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x2: {name:"rcl",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x3: {name:"rcr",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x4: {name:"shl",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x5: {name:"shr",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x6: {name:"sal",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x7: {name:"sar",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "b"}
-	    },
-	    0xd3: { // group 2 Ev,CL
-	      table_type:tables.MODRM,
-	      0x0: {name:"rol",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x1: {name:"ror",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x2: {name:"rcl",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x3: {name:"rcr",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x4: {name:"shl",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x5: {name:"shr",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x6: {name:"sal",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x7: {name:"sar",
-	            src_type: "RR",
-	            src_size: "b",
-	            src: 1,
-	            dest_type: "E",
-	            dest_size: "v"}
-	    },
-	    //0xD4 AAM Ib
-	    //0xD5 AAD Ib
-	    0xd6: {name:"salc"},
-	    //0xD7 XLAT
-	    //0xD8 FPU ESC 0
-	    //0xD9 FPU ESC 1
-	    //0xDA FPU ESC 2
-	    //0xDB FPU ESC 3
-	    //0xDC FPU ESC 4
-	    //0xDD FPU ESC 5
-	    //0xDE FPU ESC 6
-	    //0xDF FPU ESC 7
-	    //0xE0 LOOPNE/LOOPNZ Jb
-	    //0xE1 LOOPE/LOOPZ Jb
-	    //0xE2 LOOP Jb
-	    //0xE3 JCXZ/JECX Jb
-	    0xe4: {name:"in",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           dest:0},
-	    0xe5: {name:"in",
-	           src_type: "I",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           dest:0},
-	    0xe6: {name:"out",
-	           src_type: "RR",
-	           src_size: "b",
-	           dest_type: "I",
-	           dest_size: "b",
-	           src:0},
-	    0xe7: {name:"out",
-	           src_type: "RR",
-	           src_size: "v",
-	           dest_type: "I",
-	           dest_size: "b",
-	           src:0},
-	    0xe8: {name:"call",
-	           src_type: "J",
-	           src_size: "z"},
-	    0xe9: {name:"jmp",
-	           src_type: "J",
-	           src_size: "z"},
-	/*TODO: handle Ap properly
-	    0xea: {name:"jmp",
-	           src_type: "A",
-	           src_size: "p"},*/
-	    0xeb: {name:"jmp",
-	           src_type: "J",
-	           src_size: "b"},
-	    0xec: {name:"in",
-	           src_type: "RR",
-	           src_size: "w",
-	           dest_type: "RR",
-	           dest_size: "b",
-	           src:2,
-	           dest:0},
-	    0xed: {name:"in",
-	           src_type: "RR",
-	           src_size: "w",
-	           dest_type: "RR",
-	           dest_size: "v",
-	           src:2,
-	           dest:0},
-	    0xee: {name:"out",
-	           src_type: "RR",
-	           src_size: "b",
-	           dest_type: "RR",
-	           dest_size: "w",
-	           src:0,
-	           dest:2},
-	    0xef: {name:"out",
-	           src_type: "RR",
-	           src_size: "v",
-	           dest_type: "RR",
-	           dest_size: "w",
-	           src:0,
-	           dest:2},
-	    //0xF0 LOCK prefix
-	    0xf1: {name:"icebp"},
-	    //0xF2 REPNE prefix
-	    //0xF3 REP/REPE prefix
-	    0xf4: {name:"hlt"},
-	    0xf5: {name:"cmc"},
-	    0xf6: { // group 3 Eb
-	      table_type:tables.MODRM,
-	      0x0: {name:"test",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x1: {name:"test",
-	            src_type: "I",
-	            src_size: "b",
-	            dest_type: "E",
-	            dest_size: "b"},
-	      0x2: {name:"not",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x3: {name:"neg",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x4: {name:"mul",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x5: {name:"imul",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x6: {name:"div",
-	            src_type: "E",
-	            src_size: "b"},
-	      0x7: {name:"idiv",
-	            src_type: "E",
-	            src_size: "b"}
-	    },
-	    0xf7: { // group 3 Ev
-	      table_type:tables.MODRM,
-	      0x0: {name:"test",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x1: {name:"test",
-	            src_type: "I",
-	            src_size: "z",
-	            dest_type: "E",
-	            dest_size: "v"},
-	      0x2: {name:"not",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x3: {name:"neg",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x4: {name:"mul",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x5: {name:"imul",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x6: {name:"div",
-	            src_type: "E",
-	            src_size: "v"},
-	      0x7: {name:"idiv",
-	            src_type: "E",
-	            src_size: "v"}
-	    },
-	    0xf8: {name:"clc"},
-	    0xf9: {name:"stc"},
-	    0xfa: {name:"cli"},
-	    0xfb: {name:"sti"},
-	    0xfc: {name:"cld"},
-	    0xfd: {name:"std"},
-	    0xfe: { // group 4
-	      table_type:tables.MODRM,
-	      0x00: {name:"inc",
-	             src_type: "E",
-	             src_size: "b"},
-	      0x01: {name:"dec",
-	             src_type: "E",
-	             src_size: "b"}
-	    },
-	    0xff: { // group 5
-	      table_type:tables.MODRM,
-	      0x00: {name:"inc",
-	             src_type: "E",
-	             src_size: "v"},
-	      0x01: {name:"dec",
-	             src_type: "E",
-	             src_size: "v"},
-	      0x02: {name:"call",
-	             src_type: "E",
-	             src_size: "v"},
-	      0x03: {name:"call",
-	             src_type: "M",
-	             src_size: "p"},
-	      0x04: {name:"jmp",
-	             src_type: "E",
-	             src_size: "v"},
-	      0x05: {name:"jmp",
-	             src_type: "M",
-	             src_size: "p"},
-	      0x06: {name:"push",
-	             src_type: "E",
-	             src_size: "v"}
-	    }
+	/**
+	 * Disassembles a single operation. 
+	 * 
+	 * @protected
+	 * @param {Array.<number>|Uint8Array} buf the buffer to read from
+	 * @param {number} offset the offset from the start of the buffer
+	 * @param {Array.<number>} prefixes the prefixes to modify the instruction
+	 * @return {{operation: Array.<Object>, length: number}}
+	 */
+	DisASMx86.prototype.parseOperation = function(buf, offset, prefixes) {
+		var operation = null;
+		
+		for (var i=0; i < DisASMx86.x86Opcodes.opcodes.length; ++i) {
+			var op = DisASMx86.x86Opcodes.opcodes[i];
+			if (operation !== null && op.seq.length <= operation.seq.length) continue;
+			
+			var j = 0;
+			for (; j < op.seq.length; ++j) {
+				if (op.seq[j] !== buf[offset + j]) break;
+			}
+			if (j !== op.seq.length) continue;
+			
+			if (op.op_ext) {
+				var finalExt = null;
+				for (var ext in op.op_ext) {
+					if (ext == this.getReg(buf[offset + op.seq.length - 1])) {
+						finalExt = ext;
+						break;
+					}
+				}
+				
+				if (finalExt === null) continue;
+				
+				operation = extend(op);
+				delete operation.op_ext;
+				
+				for (var key in op.op_ext[finalExt]) {
+					operation[key] = extend(op.op_ext[finalExt][key]);
+				}
+			} else {
+				operation = extend(op);
+			}
+			
+			if (operation.prefixes) {
+				for (var prefix in operation.prefixes) {
+					for (var k=0; k < prefixes.length; ++k) {
+						if (prefix == prefixes[k]) {
+							for (var key in operation.prefixes[prefix]) {
+								operation[key] = extend(operation.prefixes[prefix][key]);
+							}
+							
+							prefixes.splice(k, 1);
+							--k;
+						}
+					}
+				}
+				
+				delete operation.prefixes;
+			}
+			
+			break;
+		}
+		
+		if (operation === null) {
+			throw new Error('Unknown assembly opcode (' + buf[offset].toString(16) + ').');
+		}
+		
+		return operation;
+	}
+	
+	/**
+	 * Parses the ModR/M byte.
+	 * 
+	 * @protected
+	 * @param {number} b the ModR/M byte
+	 * @return {src: {reg: Object, sib: boolean, disp: number}, dest: string}
+	 */
+	DisASMx86.prototype.parseModRM = function(b) {
+		var dest = DisASMx86.Registers[this.getReg(b)];
+		var displ = 0;
+		var adrOf = true;
+		var sib = false;
+		var regData = null;
+		var modMemory = true;
+		
+		var mod = this.getMod(b);
+		switch (mod) { // case 0 handled as default
+			case 1:
+				displ = 1;
+				break;
+			case 2:
+				displ = this.modeConfig.addrSize; // TODO: Check if addrSize is correct here
+				break;
+			case 3:
+				adrOf = false;
+				modMemory = false;
+				break;
+		}
+		
+		var reg = this.getRM(b);
+		switch (reg) {
+			case 0:
+			case 1:
+			case 2:
+			case 3:
+			case 6:
+			case 7:
+				if (modMemory && this.config.addrSize === 2) { // 16bit mode has custom combinations
+					regData = DisASMx86.RegisterCombinations[reg];
+				} else {
+					regData = DisASMx86.Registers[reg];
+				}
+				break;
+			case 4:
+				if (modMemory) {
+					sib = true;
+				} else {
+					regData = DisASMx86.Registers[reg];
+				}
+				break;
+			case 5:
+				if (displ === 0 && adrOf) {
+					displ = this.modeConfig.addrSize; // TODO: Check if addrSize is correct here
+				} else {
+					regData = DisASMx86.Registers[reg];
+				}
+				break;
+		}
+		
+		return {
+			src: {
+				reg: regData,
+				displ: displ,
+				adrOf: adrOf,
+				sib: sib
+			},
+			dest: dest
+		};
 	};
 	
-	/*
-	 * Decode x86 instruction prefixes from |bytes| starting at |offset|.
-	 * Set the prefix information in |config|. Return the number of bytes
-	 * decoded.
+	/**
+	 * Parses the sib byte.
+	 * 
+	 * @protected
+	 * @param {number} b the sib byte
+	 * @return {scale: number, index: number, base: number}
 	 */
-	function handle_prefixes(bytes, offset, config, default_size) {
-	    var count = 0;
-	    while (count < 4 && offset < bytes.length) {
-	        var pb = bytes[offset++];
-	        if (!(pb in opcodes_x86))
-	            break;
-	
-	        var p = opcodes_x86[pb];
-	        if (!p.prefix_type)
-	            break;
-	
-	        count++;
-	        switch (p.prefix_type) {
-	        case prefix.LOCK:
-	            config.lock = true;
-	            break;
-	        case prefix.REPE:
-	        case prefix.REPNE:
-	            //TODO
-	            break;
-	        case prefix.SEGMENT_CS:
-	        case prefix.SEGMENT_SS:
-	        case prefix.SEGMENT_DS:
-	        case prefix.SEGMENT_ES:
-	        case prefix.SEGMENT_FS:
-	        case prefix.SEGMENT_GS:
-	            //TODO
-	            break;
-	        case prefix.OPERAND_SIZE:
-	            //TODO: handle 64-bit
-	            config.op_size = default_size == 4 ? 2 : 4;
-	            break;
-	        case prefix.ADDR_SIZE:
-	            config.addr_size = default_size == 4 ? 2 : 4;
-	            break;
-	        }
-	    }
-	    return count;
-	}
-	
-	/*
-	 * Fetch |count| bytes from |bytes| at |offset| and return the value as a little-endian
-	 * integer.
-	 */
-	function fetch_bytes(count, bytes, offset) {
-	    if (offset + count > bytes.length)
-	        throw new Error("Ran out of bytes!");
-	  var val = 0;
-	  for (var i = 0; i < count; i++) {
-	    val |= (bytes[offset + i] << (8 * i));
-	  }
-	  return val;
-	}
-	
-	/*
-	 * Given a register value |reg|, return the register name
-	 * according to the operand size as defined in the opcode
-	 * definition |opsize| and the current |config|.
-	 */
-	function decode_register(reg, opsize, config) {
-	    var size;
-	    switch (opsize) {
-	    case "b":
-	        size = 1;
-	        break;
-	    case "w":
-	        size = 2;
-	        break;
-	    case "d":
-	        size = 4;
-	        break;
-	    case "q":
-	        size = 8;
-	        break;
-	    case "v":
-	    case "z": //XXX?
-	    case "p":
-	        size = config.op_size;
-	        break;
-	    }
-	    return gpregs[size][reg];
-	}
-	
-	function modrm_mod(modrm) {
-	  return (modrm & 0xc0) >> 6;
-	}
-	
-	function modrm_reg(modrm) {
-	  return (modrm & 0x38) >> 3;
-	}
-	
-	function modrm_rm(modrm) {
-	  return modrm & 0x7;
-	}
-	
-	/*
-	 * Decode the Mod R/M byte in |op_bytes|. |which| can be "reg" or "rm".
-	 * |opsize| is the operand size defined for the current instruction.
-	 */
-	function decode_modrm(op_bytes, which, opsize, config) {
-	    var mod = modrm_mod(op_bytes.modrm);
-	    var reg = modrm_reg(op_bytes.modrm);
-	    var rm = modrm_rm(op_bytes.modrm);
-	    switch (which) {
-	    case "reg":
-	        return decode_register(reg, opsize, config);
-	    case "rm":
-	        if (rm == 4 && mod != 3) {
-	          // SIB mode
-	        }
-	        else {
-	          switch (mod) {
-	          case 0: // register-indirect addressing
-	            if (rm == 5) {
-	              // 4-byte displacement only
-	              return new Address({displacement: new Literal(op_bytes.displacement,
-	                                                            op_bytes.displacement_size)});
-	            }
-	            
-	            return new Address({register: decode_register(rm, opsize, config)});
-	          case 1: // register-indirect + 1 byte displacement
-	          case 2: // register-indirect + 4 byte displacement
-	            return new Address({register: decode_register(rm, opsize, config),
-	                                displacement: new Literal(op_bytes.displacement,
-	                                                          op_bytes.displacement_size)});
-	          case 3: // register-only addressing
-	            return decode_register(rm, opsize, config);
-	            break;
-	          }
-	        }
-	        break;
-	    }
-	    return null;
-	}
-	
-	/*
-	 * Handle a single operand for an instruction.
-	 * Return the number of additional bytes consumed.
-	 */
-	function handle_operand(insn, insn_ret, operand, op_bytes, config) {
-	    //console.log(insn[operand + "_type"]);
-	    switch (insn[operand + "_type"]) {
-	    case null:
-	        // no argument
-	        break;
-	    case "RR":
-	        // general-purpose register encoded in opcode
-	        insn_ret[operand] = decode_register(insn[operand], insn[operand + "_size"], config);
-	        break;
-	    case "RS":
-	        // segment register encoded in opcode
-	        insn_ret[operand] = segregs[insn[operand]];
-	        break;
-	    case "E":
-	    case "M": // technically this should only allow memory
-	        // mod R/M byte, general-purpose register or memory address
-	        insn_ret[operand] = decode_modrm(op_bytes, 'rm', insn[operand + "_size"], config);
-	        break;
-	    case "G":
-	        // R/M byte, general-purpose register
-	        insn_ret[operand] = decode_modrm(op_bytes, 'reg', insn[operand + "_size"], config);
-	        break;
-	    case "A":
-	    case "I":
-	    case "J": //XXX: offset relative to instruction pointer!
-	    case "O":
-	        // Immediate data
-	        insn_ret[operand] = new Literal(op_bytes.immediate, op_bytes.immediate_size);
-	        break;
-	    }
-	}
-	
-	/*
-	 * Handle multi-byte instruction table lookup.
-	 * Return 
-	 */
-	function handle_subtable(table, config, bytes, offset) {
-	  var size = 0;
-	  var index;
-	  switch (table.table_type) {
-	  case tables.MODRM:
-	    var modrm = fetch_bytes(1, bytes, offset);
-	    // Don't increment size because handle_op_bytes will consume the Mod R/M byte.
-	    index = modrm_reg(modrm);
-	    break;
-	  }
-	  return [table[index], size];
-	}
-	
-	/*
-	 * Fetch all the extra bytes needed to decode this opcode,
-	 * including the Mod R/M byte, any displacement bytes, the SIB byte,
-	 * and any immediate bytes. Return the number of bytes fetched.
-	 */
-	function handle_op_bytes(insn, op_bytes, config, bytes, offset) {
-	  var modrm = false, immediate_size = 0;
-	  var size = 0;
-	  var operands = ["dest","src","aux"];
-	  for (var i=0; i<operands.length; i++) {
-	    switch (insn[operands[i] + "_type"]) {
-	    case "C":
-	    case "D":
-	    case "E":
-	    case "G":
-	    case "M":
-	    case "P":
-	    case "PR":
-	    case "R":
-	    case "S":
-	    case "T":
-	    case "V":
-	    case "VR":
-	    case "W":
-	      modrm = true;
-	      break;
-	    case "A":
-	    case "I":
-	    case "J":
-	    case "O":
-	      switch (insn[operands[i] + "_size"]) {
-	      case "b":
-	        immediate_size = 1;
-	        break;
-	      case "w":
-	        immediate_size = 2;
-	        break;
-	      case "d":
-	        immediate_size = 4;
-	        break;
-	      case "q":
-	        immediate_size = 8;
-	        break;
-	      case "o":
-	        immediate_size = 16;
-	        break;
-	      case "p":
-	        // 32-bit or 48-bit pointer
-	        immediate_size = config.op_size + 2;
-	        break;
-	      case "v":
-	      case "z": //XXX: dword, not qword!
-	        if (insn[operands[i] + "_type"] == "I") {
-	          immediate_size = config.op_size;
-	        }
-	        else {
-	          immediate_size = config.addr_size;
-	        }
-	        break;
-	      }
-	      break;
-	    }
-	  }
-	  // Handle Mod R/M byte + SIB + displacement
-	  if (modrm) {
-	    op_bytes.modrm = fetch_bytes(1, bytes, offset);
-	    offset++;
-	    size++;
-	    var mod = modrm_mod(op_bytes.modrm);
-	    var rm = modrm_rm(op_bytes.modrm);
-	    // SIB
-	    if (rm == 4 && mod != 3) {
-	      op_bytes.sib = fetch_bytes(1, bytes, offset);
-	      offset++;
-	      size++;
-	      switch (mod) {
-	      case 1:
-	        op_bytes.displacement_size = 1;
-	        op_bytes.displacement = fetch_bytes(1, bytes, offset);
-	        offset++;
-	        size++;
-	        break;
-	      case 0:
-	      case 2:
-	        op_bytes.displacement_size = 4;
-	        op_bytes.displacement = fetch_bytes(4, bytes, offset);
-	        offset += 4;
-	        size += 4;
-	        break;
-	      }
-	    }
-	    switch (mod) {
-	    case 0:
-	      // register-indirect addressing (or 4-byte only)
-	      if (rm == 5) {
-	        //XXX: displacement is signed
-	        op_bytes.displacement_size = 4;
-	        op_bytes.displacement = fetch_bytes(4, bytes, offset);
-	        offset += 4;
-	        size += 4;
-	      }
-	      break;
-	    case 1:
-	      //XXX: displacement is signed
-	      op_bytes.displacement_size = 1;
-	      op_bytes.displacement = fetch_bytes(1, bytes, offset);
-	      offset++;
-	      size++;
-	      break;
-	    case 2:
-	      //XXX: displacement is signed
-	      op_bytes.displacement_size = 4;
-	      op_bytes.displacement = fetch_bytes(4, bytes, offset);
-	      offset += 4;
-	      size += 4;
-	      break;
-	    case 3:
-	      // register addressing
-	      break;
-	    }
-	  }
-	  // Handle immediate bytes
-	  if (immediate_size > 0) {
-	    op_bytes.immediate_size = immediate_size;
-	    op_bytes.immediate = fetch_bytes(immediate_size, bytes, offset);
-	    offset += immediate_size;
-	    size += immediate_size;
-	  }
-	  return size;
-	}
-	
-	/*
-	 * Disassemble a single instruction starting at bytes[offset].
-	 * Returns [instruction, instruction size].
-	 */
-	function disassemble_x86_instruction(bytes, offset) {
-	    if (bytes.length <= offset || offset < 0) {
-	        return [null, 0];
-	    }
-	    var length = 1;
-	    var config = {addr_size:4, op_size:4, lock:false, strops: null, segment:null};
-	    var size = handle_prefixes(bytes, offset, config, 4);
-	    offset += size;
-	    var op = bytes[offset];
-	    if (op in opcodes_x86) {
-	        var insn = opcodes_x86[op];
-	        size++;
-	        offset++;
-	        if (insn.prefix) {
-	            // error, too many prefixes?
-	            return [null, size];
-	        }
-	        if ('table_type' in insn) {
-	          // subtable lookup for multi-byte opcodes
-	          var ret = handle_subtable(insn, config, bytes, offset);
-	          insn = ret[0];
-	          size += ret[1];
-	          offset += ret[1];
-	        }
-	        // Handle mod/rm, displacement, sib, immediate bytes all at once
-	        var op_bytes = {};
-	        size += handle_op_bytes(insn, op_bytes, config, bytes, offset);
-	        var insn_ret = {name:insn.name, config:config};
-	        var operands = ["dest","src","aux"];
-	        for (var i=0; i<operands.length; i++) {
-	            handle_operand(insn, insn_ret, operands[i], op_bytes, config);
-	        }
-	        return [insn_ret, size];
-	    }
-	    else {
-	        // Unknown
-	        return [null, 1];
-	    }
-	}
-	
-	/*
-	 * Disassemble a single instruction starting at bytes[offset].
-	 * Format the instruction bytes + mnemonics.
-	 * Returns [bytes string, mnemonic string, instruction size].
-	 */
-	function disassemble_and_format_x86_instruction(bytes, offset) {
-	    var dis = disassemble_x86_instruction(bytes, offset);
-	    // format bytes
-	    var len = dis[1];
-	    var format_bytes = ["  ","  ","  ","  ","  "];
-	    for (var i = 0; i < len; i++) {
-	        var b = bytes[offset + i].toString(16);
-	        format_bytes[i] = b.length == 1 ? "0" + b : b;
-	    }
-	    var insn = dis[0];
-	    var mnemonic;
-	    if (insn == null) {
-	        mnemonic = "??";
-	    }
-	    else {
-	        mnemonic = insn.name;
-	        if (insn.src) {
-	            mnemonic += " ";
-	            if (insn.dest) {
-	                //TODO: handle Intel syntax as well
-	                mnemonic += insn.src+","+insn.dest;
-	            }
-	            else {
-	                mnemonic += insn.src;
-	            }
-	        }
-	    }
-	    return [format_bytes.join(" "), mnemonic, len];
-	}
-	
-	/*
-	 * Disassemble |count| instructions from |memory| starting at |start_address|.
-	 * Return a string with one instruction per line, formatted like:
-	 * <address>: <bytes> <mnemonics>
-	 */
-	function disassemble_memory(memory, start_address, count) {
-	    var ret = [];
-	    //XXX: handle 64-bit offsets?
-	    var offset = start_address.minus(memory.startAddress).lo;
-	    for (var i = 0; i < count; i++) {
-	        var dis = disassemble_and_format_x86_instruction(memory.bytes, offset);
-	        ret.push(memory.startAddress.plus(new Uint64(offset)).toString() + " " +
-	                 dis[0] + " " + dis[1]);
-	        offset += dis[2];
-	    }
-	    return ret.join("\n");
-	}
-	
-	window.disasmx86 = {
-		disassemble_x86_instruction: disassemble_x86_instruction,
-		disassemble_and_format_x86_instruction: disassemble_and_format_x86_instruction,
-		disassemble_memory: disassemble_memory
+	DisASMx86.prototype.parseSIB = function(b) {
+		return {scale: b >> 6, index: (b >> 3) & 7, base: b & 7}
 	};
-});
+	
+	/**
+	 * Disassembles a single instruction from a buffer. 
+	 * 
+	 * @param {Array.<number>|Uint8Array} buf the buffer to read from
+	 * @param {number} offset the offset from the start of the buffer
+	 * @return {{opcode: number, length: number}}
+	 */
+	DisASMx86.prototype.parseInstruction = function(buf, offset) {
+		if (!offset) offset = 0;
+		this.modeConfig = {registerMode: 'r', addrSize: 4};
+		
+		var modRM = null;
+		var sib = null;
+		var preOffset = offset;
+		var displacement = null;
+		var immediate = null;
+		
+		var prefixes = this.parsePrefixes(buf, offset);
+		offset += prefixes.length;
+		
+		var operation = this.parseOperation(buf, offset, prefixes);
+		offset += operation.seq.length;
+		
+		if (operation.modRM) {
+			modRM = this.parseModRM(buf[offset]);
+			offset++;
+			
+			if (modRM.src.sib) {
+				sib = this.parseSIB(buf[offset]);
+				offset++;
+			}
+		
+			if (modRM.src.displ) {
+				displacement = 0;
+				for (var i=0; i < modRM.src.displ; ++i, ++offset) {
+					displacement += buf[offset] * Math.pow(2, i * 8);
+				}
+				if (displacement > 127) {
+					displacement -= 256;
+				}
+			}
+		}
+		
+		if (operation.immed) {
+			immediate = 0;
+			for (var i=0; i < config.addrSize; ++i, ++offset) { // TODO: Check if addrSize is the correct one for this
+				immediate += buf[offset] * Math.pow(2, i * 8);
+			}
+		}
+		
+		return {
+			prefixes: prefixes,
+			opcode: operation,
+			modRM: modRM,
+			sib: sib,
+			disp: displacement,
+			immediate: immediate,
+			length: offset - preOffset
+		};
+	};
+	
+	/**
+	 * Parses an instruction and returns a formatted string.
+	 * 
+	 * @param {Array.<number>|Uint8Array} buf the buffer to read from
+	 * @param {number} offset the offset from the start of the buffer
+	 * @return {string}
+	 */
+	DisASMx86.prototype.parseAndFormat = function(buf, offset) {
+		var data = this.parseInstruction(buf, offset);
+		var str = '';
+		
+		if (this.config.notation === 'INT') {
+			for (var i=0; i < data.prefixes.length; ++i) {
+				if (data.prefixes[i].mnem) {
+					str += ' ' + data.prefixes[i].mnem;
+				}
+			}
+			
+			str += ' ' + data.opcode.mnem;
+			
+			if (data.opcode.operands) {
+				var opStr = '';
+				for (var i=0; i < data.opcode.operands.length; ++i) {
+					var op = data.opcode.operands[i];
+					opStr += ', ';
+					
+					if (op === 'I') {
+						opStr += '0x' + data.immediate.toString(16) + 'h';
+					} else if (op === 'R') {
+						opStr += data.modRM.dest.r32; // TODO: choose right operation mode from operands
+					} else if (op === 'RM') {
+						if (data.sib) {
+							// TODO: Handle SIB byte
+						} else {
+							if (data.modRM.src.adrOf) {
+								opStr += '[' + data.modRM.src.reg.r32 + (data.disp ? ' + ' + data.disp : '') + ']';
+							} else {
+								opStr += data.modRM.src.reg.r32;
+							}
+						}
+					} else {
+						opStr += op.r32; // TODO: choose right operation mode from operands
+					}
+				}
+				
+				str += opStr.length > 0 ? ' ' + opStr.substr(2) : '';
+			}
+		}
+		
+		return {str: str.length > 0 ? str.substr(1) : '', length: data.length};
+	};
+	
+	self.DisASMx86 = DisASMx86;
+})();

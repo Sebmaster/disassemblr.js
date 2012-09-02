@@ -24,7 +24,7 @@ function parseFile(buf) {
 	var disassembler = new Disassemblr(buf);
 	
 	disassembler.onError = function(e) {
-		alert(e);
+		console.error(e);
 	};
 
 	disassembler.onHeader = function(header) {
@@ -42,8 +42,9 @@ function parseFile(buf) {
 	};
 	
 	disassembler.onAssembly = function(data) {
-		jQuery('#assembly').text(data);
+		jQuery('#assembly').append('\r\n' + JSON.stringify(data));
 	}
 	
 	disassembler.start();
+	disassembler.parseAssembly();
 }
