@@ -119,16 +119,16 @@
 			xmm: 'XMM7'
 		},
 		8: {
-			r16: 'CS'
+			r16: 'ES'
 		},
 		9: {
-			r16: 'DS'
+			r16: 'CS'
 		},
 		10: {
 			r16: 'SS'
 		},
 		11: {
-			r16: 'ES'
+			r16: 'DS'
 		},
 		12: {
 			r16: 'FS'
@@ -6031,10 +6031,11 @@
 	 * 
 	 * @protected
 	 * @param {number} b the ModR/M byte
+	 * @param {?boolean} regSegment true, if the reg field is a segment register
 	 * @return {src: {reg: Object, sib: boolean, disp: number}, dest: string}
 	 */
-	DisASMx86.prototype.parseModRM = function(b) {
-		var dest = DisASMx86.Registers[this.getReg(b)];
+	DisASMx86.prototype.parseModRM = function(b, regSegment) {
+		var dest = DisASMx86.Registers[this.getReg(b) + (regSegment ? 8 : 0)];
 		var displ = false;
 		var adrOf = true;
 		var sib = false;
@@ -6189,16 +6190,19 @@
 		var size;
 		
 		switch (opSize) {
+			case 'b':
+			case 'bs':
+			case 'bss':
+				size = 8;
+				break;
 			case 'v':
 			case 'vs':
 			case 'vqp':
 			case 'vds':
 				size = this.modeConfig.operSize === 32 ? 32 : 16;
 				break;
-			case 'b':
-			case 'bs':
-			case 'bss':
-				size = 8;
+			case 'w':
+				size = 16;
 				break;
 			default:
 				throw 'OpSize ' + opSize + ' unknown!';
@@ -6253,10 +6257,12 @@
 		
 		var str = '';
 		if (modRM.src.sib)  {
-			if (modRM.src.sib.scale !== 0) {
-				str = ' ' + DisASMx86.Registers[modRM.src.sib.index].r32 + ' * ' + (1 << modRm.src.sib.scale);
+			var sib = this.parseSIB(buf[sharedOffset + len]);
+
+			if (sib.scale !== 0) {
+				str = ' ' + DisASMx86.Registers[sib.index].r32 + ' * ' + (1 << sib.scale);
 			}
-			str += ' ' + DisASMx86.Registers[modRM.src.sib.base].r32 + ' ';
+			str += ' ' + DisASMx86.Registers[sib.base].r32 + ' ';
 			
 			len++;
 		} else if (modRM.src.reg) {
@@ -6267,7 +6273,7 @@
 			str += '+ ' + this.formatHexNumber(parseNumber(buf, sharedOffset + len, 1));
 			++len;
 		} else if (modRM.src.displ === 2) {
-			str += this.formatHexNumber(parseNumber(buf, sharedOffset + len, this.modeConfig.operSize / 8));
+			str += '+ ' + this.formatHexNumber(parseNumber(buf, sharedOffset + len, this.modeConfig.operSize / 8));
 			len += this.modeConfig.operSize / 8;
 		}
 		
@@ -6292,6 +6298,39 @@
 	DisASMx86.prototype.parseTypeO = function(buf, sharedOffset, ownOffset, operation, opSize) {
 		var num = parseNumber(buf, ownOffset, this.modeConfig.addrSize / 8) ;
 		return {str: this.formatHexNumber(num), ownLen: this.modeConfig.addrSize / 8, sharedLen: 0};
+	};
+	
+	/**
+	 * Parses operand type S.
+	 * 
+	 * @private
+	 * @param {Array.<number>|Uint8Array} buf the buffer to parse
+	 * @param {number} offset the offset to parse from
+	 * @param {Object} operation the operation to parse
+	 * @param {string} opType the size of the operand
+	 * @return {str: string, len: number}
+	 */
+	DisASMx86.prototype.parseTypeS = function(buf, sharedOffset, ownOffset, operation, opSize) {
+		var modRM = this.parseModRM(buf[sharedOffset], true);
+		var size;
+		
+		switch (opSize) {
+			case 'b':
+				size = 8;
+				break;
+			case 'v':
+			case 'vqp':
+			case 'vds':
+				size = this.modeConfig.operSize === 32 ? 32 : 16;
+				break;
+			case 'w':
+				size = 16;
+				break;
+			default:
+				throw 'OpSize ' + opSize + ' unknown!';
+		}
+		
+		return {str: modRM.dest[this.getRegisterMode(size, operation.instrExt)], sharedLen: 1, ownLen: 0};
 	};
 	
 	/**
