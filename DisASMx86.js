@@ -135,6 +135,30 @@
 		},
 		13: {
 			r16: 'GS'
+		},
+		14: {
+			s80: 'ST0'
+		},
+		15: {
+			s80: 'ST1'
+		},
+		16: {
+			s80: 'ST2'
+		},
+		17: {
+			s80: 'ST3'
+		},
+		18: {
+			s80: 'ST4'
+		},
+		19: {
+			s80: 'ST5'
+		},
+		20: {
+			s80: 'ST6'
+		},
+		21: {
+			s80: 'ST7'
 		}
 	};
 	
@@ -5938,7 +5962,11 @@
 	 */
 	DisASMx86.prototype.getRegisterMode = function(size, instrExt) {
 		if (!instrExt) {
-			return 'r' + size;
+			if (size === 80) {
+				return 's80';
+			} else {
+				return 'r' + size;
+			}
 		} else if (instr_ext === 'mmx' && size === 64) {
 			return 'mm';
 		} else if (instrExt === 'sse' && size === 128) {
@@ -6034,8 +6062,8 @@
 	 * @param {?boolean} regSegment true, if the reg field is a segment register
 	 * @return {src: {reg: Object, sib: boolean, disp: number}, dest: string}
 	 */
-	DisASMx86.prototype.parseModRM = function(b, regSegment) {
-		var dest = DisASMx86.Registers[this.getReg(b) + (regSegment ? 8 : 0)];
+	DisASMx86.prototype.parseModRM = function(b, regOffset) {
+		var dest = DisASMx86.Registers[this.getReg(b) + (regOffset ? regOffset : 0)];
 		var displ = false;
 		var adrOf = true;
 		var sib = false;
@@ -6145,6 +6173,23 @@
 		
 		return {str: str, sharedLen: len, ownLen: 0};
 	};
+	
+	/**
+	 * Parses operand type S.
+	 * 
+	 * @private
+	 * @param {Array.<number>|Uint8Array} buf the buffer to parse
+	 * @param {number} offset the offset to parse from
+	 * @param {Object} operation the operation to parse
+	 * @param {string} opType the size of the operand
+	 * @return {str: string, len: number}
+	 */
+	DisASMx86.prototype.parseTypeEST = function(buf, sharedOffset, ownOffset, operation, opSize) {
+		var modRM = this.parseModRM(buf[sharedOffset], 14);
+		
+		return {str: modRM.dest[this.getRegisterMode(80, operation.instrExt)], sharedLen: 1, ownLen: 0};
+	};
+	
 	
 	/**
 	 * Parses operand type G.
@@ -6311,7 +6356,7 @@
 	 * @return {str: string, len: number}
 	 */
 	DisASMx86.prototype.parseTypeS = function(buf, sharedOffset, ownOffset, operation, opSize) {
-		var modRM = this.parseModRM(buf[sharedOffset], true);
+		var modRM = this.parseModRM(buf[sharedOffset], 8);
 		var size;
 		
 		switch (opSize) {
@@ -6354,6 +6399,7 @@
 				break;
 			case 'b':
 				size = 8;
+				break;
 			default:
 				throw 'OpSize ' + opSize + ' unknown!';
 		}
@@ -6391,6 +6437,9 @@
 				ownOffset += info.ownLen;
 			} else if (operation.operands[i].r) {
 				switch (operation.operands[i].t) {
+					case 'b':
+						operands[i] = operation.operands[i].r[this.getRegisterMode(8, operation.instrExt)];
+						break;
 					case 'vqp':
 						operands[i] = operation.operands[i].r[this.getRegisterMode(this.modeConfig.operSize, operation.instrExt)];
 						break;
