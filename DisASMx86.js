@@ -6013,6 +6013,7 @@
 			for (; j < op.seq.length; ++j) {
 				if (op.seq[j] !== buf[offset + j]) break;
 			}
+			
 			if (j !== op.seq.length) {
 				if (!op.operands || op.operands.length === 0) continue;
 				
@@ -6022,7 +6023,7 @@
 				if (op.seq[j] !== (buf[offset + j] & 0xF8)) continue; // Check operands for register indicator
 			}
 			
-			if ((op.opExt || op.opExt === 0) && op.opExt !== this.getReg(buf[offset + op.seq.length])) {
+			if ((op.opExt || op.opExt === 0) && op.opExt !== this.getReg(buf[offset + (op.seq[0] === 0x0F ? 2 : 1)])) {
 				continue;
 			}
 			
