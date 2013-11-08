@@ -110,7 +110,7 @@ var HeaderStructure = {
 				return this.parse(['array', {
 					virtualAddress: 'uint32',
 					size: 'uint32'
-				}, this.current.rvaCount]);
+				}, this.current.rvaCount < 16 ? this.current.rvaCount : 16]);
 			}
 		}
 	},
