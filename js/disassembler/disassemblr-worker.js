@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts('uint64.js', 'jDataView.js', 'jParser.js', 'DisASMx86.js');
+importScripts('../vendor/uint64.js', '../vendor/jDataView.js', '../vendor/jParser.js', 'DisASMx86.js');
 
 var HeaderStructure = {
 	DOSHeader: {

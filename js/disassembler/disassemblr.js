@@ -7,7 +7,7 @@
  * @param {Uint8Array} buf the bytes of the file to parse
  */
 function Disassemblr(buf) {
-	this.worker = new Worker('disassemblr-worker.js');
+	this.worker = new Worker('js/disassembler/disassemblr-worker.js');
 	
 	this.worker.onmessage = this.workerMessage.bind(this);
 	
